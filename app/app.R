@@ -2,6 +2,10 @@ library(shiny)
 
 ARMS <- c("Control", "Treatment")
 
+AGE_GROUPS <- c("21-34", "35-54", "55+")
+SEX_LEVELS <- c("Male", "Female")
+DRINK_LEVELS <- c("Moderate", "Heavy")
+
 # -------------------------------
 # Urn randomization function
 # -------------------------------
@@ -27,10 +31,20 @@ urn_randomize <- function(previous_assignments,
 }
 
 # -------------------------------
+# Helper: derive age group
+# -------------------------------
+age_to_group <- function(age) {
+    if (age >= 21 && age <= 34) return("21-34")
+    if (age >= 35 && age <= 54) return("35-54")
+    if (age >= 55) return("55+")
+    NA_character_
+}
+
+# -------------------------------
 # UI
 # -------------------------------
 ui <- fluidPage(
-    titlePanel("Age × Gender Stratified Urn Randomization"),
+    titlePanel("Stratified Urn Randomization"),
     
     tags$div(
         style = "color: #b30000; font-weight: bold;",
@@ -47,9 +61,10 @@ ui <- fluidPage(
             ),
             downloadButton("download", "Download current CSV"),
             hr(),
-            numericInput("age", "Age:", min = 18, max = 100, value = 50),
-            selectInput("gender", "Gender:",
-                        choices = c("Male", "Female")),
+            numericInput("age", "Age:", min = 21, max = 120, value = 30),
+            selectInput("sex", "Sex:", choices = SEX_LEVELS),
+            selectInput("drink", "Baseline drinking level:",
+                        choices = DRINK_LEVELS),
             actionButton("rand", "Randomize", class = "btn-primary"),
             hr(),
             textOutput("assignment")
@@ -74,7 +89,8 @@ server <- function(input, output, session) {
         id = integer(),
         age = integer(),
         age_group = character(),
-        gender = character(),
+        sex = character(),
+        drinking_level = character(),
         treatment = character(),
         stringsAsFactors = FALSE
     )
@@ -89,17 +105,19 @@ server <- function(input, output, session) {
         
         df <- read.csv(input$csv$datapath, stringsAsFactors = FALSE)
         
-        required <- c("age", "age_group", "gender", "treatment")
+        required <- c("age", "age_group", "sex", "drinking_level", "treatment")
         
         validate(
             need(all(required %in% names(df)),
                  paste("CSV must contain:", paste(required, collapse = ", "))),
-            need(all(df$treatment %in% ARMS),
-                 "CSV contains invalid treatment labels"),
-            need(all(df$age_group %in% c("<50", ">=50")),
+            need(all(df$age_group %in% AGE_GROUPS),
                  "Invalid age_group values"),
-            need(all(df$gender %in% c("Male", "Female")),
-                 "Invalid gender values")
+            need(all(df$sex %in% SEX_LEVELS),
+                 "Invalid sex values"),
+            need(all(df$drinking_level %in% DRINK_LEVELS),
+                 "Invalid drinking_level values"),
+            need(all(df$treatment %in% ARMS),
+                 "Invalid treatment values")
         )
         
         if (!"id" %in% names(df)) {
@@ -116,11 +134,17 @@ server <- function(input, output, session) {
     observeEvent(input$rand, {
         dat <- enrollments()
         
-        age_group <- ifelse(input$age < 50, "<50", ">=50")
+        age_group <- age_to_group(input$age)
+        
+        validate(
+            need(!is.na(age_group),
+                 "Age must be ≥21")
+        )
         
         stratum_idx <- which(
             dat$age_group == age_group &
-                dat$gender == input$gender
+                dat$sex == input$sex &
+                dat$drinking_level == input$drink
         )
         
         prev_assignments <- dat$treatment[stratum_idx]
@@ -131,7 +155,8 @@ server <- function(input, output, session) {
             id = nrow(dat) + 1,
             age = input$age,
             age_group = age_group,
-            gender = input$gender,
+            sex = input$sex,
+            drinking_level = input$drink,
             treatment = trt,
             stringsAsFactors = FALSE
         )
@@ -155,7 +180,10 @@ server <- function(input, output, session) {
     output$balance_table <- renderTable({
         dat <- enrollments()
         if (nrow(dat) == 0) return(NULL)
-        as.data.frame(with(dat, table(age_group, gender, treatment)))
+        
+        as.data.frame(
+            with(dat, table(age_group, sex, drinking_level, treatment))
+        )
     })
     
     # -------------------------------

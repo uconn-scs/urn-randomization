@@ -1,0 +1,4 @@
+id,age,age_group,sex,drinking_level,treatment
+1,29,21-34,Male,Moderate,Control
+2,48,35-54,Female,Heavy,Treatment
+3,61,55+,Male,Moderate,Control
